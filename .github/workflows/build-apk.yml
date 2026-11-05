@@ -8,12 +8,26 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Extract project
         run: |
-          unzip -o LetsEarnFromRunning_Android_Project.zip
+          ZIP_FILE=$(find . -maxdepth 1 -type f -iname '*.zip' -print -quit)
+          if [ -z "$ZIP_FILE" ]; then
+            echo "No ZIP file found in repository root"
+            ls -la
+            exit 1
+          fi
+          mkdir -p unpacked
+          unzip -q "$ZIP_FILE" -d unpacked
+          PROJECT_DIR=$(dirname "$(find unpacked -name settings.gradle.kts -print -quit)")
+          if [ -z "$PROJECT_DIR" ] || [ ! -d "$PROJECT_DIR/app" ]; then
+            echo "Android project structure not found"
+            exit 1
+          fi
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       - uses: actions/setup-java@v4
         with:
@@ -27,9 +41,17 @@ jobs:
           gradle-version: '8.9'
 
       - name: Build APK
-        run: gradle -p LetsEarnFromRunning assembleDebug
+        id: build
+        run: |
+          gradle -p "$PROJECT_DIR" assembleDebug
+          APK_PATH=$(find "$PROJECT_DIR/app/build/outputs/apk/debug" -name '*.apk' -print -quit)
+          if [ -z "$APK_PATH" ]; then
+            echo "APK not generated"
+            exit 1
+          fi
+          echo "apk_path=$APK_PATH" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v4
         with:
           name: LetsEarnFromRunning-APK
-          path: LetsEarnFromRunning/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ steps.build.outputs.apk_path }}
